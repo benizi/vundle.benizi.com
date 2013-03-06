@@ -1,0 +1,129 @@
+" {{{1 Info
+"
+" Script to install Vundle and modify .vimrc to set it up
+" Usage: vim +'so %' <%= full_url %>
+"
+" Author: Benjamin R. Haskell <vim@benizi.com>
+
+" {{{1 Utility functions
+" {{{2 If the first parameter is false, exit with an error message
+fun! Assert(expr, msg)
+  if !a:expr
+    call confirm('Sorry. '.a:msg)
+    q
+  end
+endf
+
+" {{{2 Create a directory or exit with an error message
+fun! RequireDirectory(dir)
+  if !isdirectory(a:dir)
+    call mkdir(a:dir, 'p')
+  end
+  call Assert(isdirectory(a:dir), "Couldn't create ".a:dir."?")
+endf
+
+" {{{2 Replace instances of $HOME with ~
+fun! PrettyFilename(fname)
+  return substitute(copy(a:fname), $HOME, '~', '')
+endf
+
+" {{{1 Environment detection functions
+" {{{2 Ensure some requirements are met
+fun! FindPrereqs()
+  call Assert(exists('*mkdir'), 'This script requires a Vim with built-in mkdir')
+  call Assert(executable('git'), 'This script requires git')
+endf
+
+" {{{2 Attempt to ascertain user's .vim directory
+fun! FindDotVim()
+  let dot_vim = expand('$HOME/.vim')
+
+  if !isdirectory(dot_vim)
+    let dot_vim = fnamemodify(expand('$MYVIMRC'), ':h').'/.vim'
+  end
+
+  if !isdirectory(dot_vim)
+    let dot_vim = input("Couldn't find .vim directory. Different dir? ")
+    call Assert(isdirectory(dot_vim), "Couldn't find .vim directory")
+  end
+
+  let g:dot_vim = l:dot_vim
+endf
+
+" {{{2 Set default directories for bundles and Vundle itself
+fun! SetPaths()
+  let g:bundle = exists('$BUNDLE') ? $BUNDLE : expand(g:dot_vim.'/bundle')
+  let g:vundle = exists('$VUNDLE') ? $VUNDLE : expand(g:dot_vim.'/vundle')
+endf
+
+" {{{1 Installation functions
+" {{{2 Create the directories
+fun! CreatePaths()
+  call RequireDirectory(g:bundle)
+  call RequireDirectory(g:vundle)
+endf
+
+" {{{2 Clone the Vundle repository to its destination
+fun! CloneVundle()
+  exe ':!git clone https://github.com/gmarik/vundle '.shellescape(g:vundle)
+
+  call Assert(!v:shell_error, 'There was an error while installing')
+endf
+
+" {{{2 Add required settings to .vimrc
+fun! ModifyVimrc()
+  " Tell Vim where to find Vundle (for autoloading)
+  let set_rtp = 'set rtp+='.fnameescape(PrettyFilename(g:vundle))
+
+  let pretty_bundle = PrettyFilename(g:bundle)
+  if pretty_bundle == '~/.vim/bundle'
+    " If we're using the default, just call vundle#rc()
+    let rc_param = ''
+  else
+    " Otherwise, pass the directory explicitly
+    let rc_param = "'".fnameescape(pretty_bundle)."'"
+  end
+  let call_vundle = 'call vundle#rc('.rc_param.')'
+
+  let lines = [set_rtp, call_vundle]
+
+  if confirm(join(['Add these lines to '.$MYVIMRC.'?'] + lines,"\n"), "&Yes\n&No") == 1
+    se all& nocp nomod
+    mapc
+    noautocmd e $MYVIMRC
+    call append(0, lines)
+    noautocmd w
+  end
+endf
+
+" {{{2 Main installation flow
+fun! SetupAndInstall()
+  " Detect settings (no changes made)
+  call FindPrereqs()
+  call FindDotVim()
+  call SetPaths()
+
+  " Confirm the user wants to install
+  if confirm('Vundle will be installed in '.g:vundle.'. Continue?', "&Yes\n&No") != 1
+    q
+  end
+
+  " Create needed paths
+  call CreatePaths()
+
+  " Clone Vundle unless it's already there
+  if isdirectory(g:vundle) && isdirectory(g:vundle.'/.git')
+    call Assert(confirm('Skipping clone, since '.g:vundle.' exists. Continue?', "&Yes\n&No") == 1, 'Cancelled')
+  else
+    call CloneVundle()
+  end
+
+  " Add lines to .vimrc if acceptable
+  call ModifyVimrc()
+endf
+
+" {{{1 Run it
+call SetupAndInstall()
+q
+
+" vim:ft=vim:
